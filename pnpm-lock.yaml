@@ -2,6 +2,7 @@ lockfileVersion: 5.3
 
 specifiers:
   '@sveltejs/adapter-auto': next
+  '@sveltejs/adapter-vercel': ^1.0.0-next.0
   '@sveltejs/kit': next
   '@types/three': ^0.137.0
   '@typescript-eslint/eslint-plugin': ^5.10.1
@@ -19,6 +20,7 @@ specifiers:
   typescript: ^4.4.3
 
 dependencies:
+  '@sveltejs/adapter-vercel': 1.0.0-next.0
   three: 0.137.5
 
 devDependencies:
@@ -146,6 +148,10 @@ packages:
       esbuild: 0.13.15
       tiny-glob: 0.2.9
     dev: true
+
+  /@sveltejs/adapter-vercel/1.0.0-next.0:
+    resolution: {integrity: sha512-dQf40/2vrgRfuQ++tIAlvEgjdGUkXJTSjO5syqJd5oH2HDbP3Shi+2AxWpKAqRFGyRbXDe9ej0MK1G2soZP4fQ==}
+    dev: false
 
   /@sveltejs/adapter-vercel/1.0.0-next.39:
     resolution: {integrity: sha512-YOPGKIILm26h22GN4/iliXce61aTG3Dq5hX8xpDx0cNuCocv0OoLfIqiGpdyJ9NIMpjwXmpVoL4+nV+yh2wcSA==}
