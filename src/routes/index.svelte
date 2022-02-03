@@ -13,6 +13,7 @@
 	let timeData: Uint8Array;
 	let ctx: CanvasRenderingContext2D;
 	let fftSize = 2048;
+	let coloring = 'linear';
 
 	function updateFFT() {
 		if (!ctx) return;
@@ -31,10 +32,20 @@
 			const data = timeData[y];
 
 			const hslStart = 255;
+			const dataFloor = 25;
+			const hslfactor = hslStart / (hslStart - dataFloor);
 
-			const l = data > 10 ? '50%' : '0%';
+			const x = hslStart - data;
+			let color = x;
+			if (coloring === 'logarithmic') {
+				color = Math.pow(x, 2.3) / 1000;
+			}
 
-			ctx.fillStyle = `hsl(${hslStart - data}, 100%, ${l})`;
+			if (color < 0) color = 0;
+			if (color > 255) color = 255;
+			const l = data > dataFloor && color < 255 ? '50%' : '0%';
+
+			ctx.fillStyle = `hsl(${color}, 100%, ${l})`;
 
 			const ratio = height / (dataEnd - dataStart);
 
@@ -81,7 +92,7 @@
 			try {
 				context = new AudioContext();
 				analyser = context.createAnalyser();
-				analyser.fftSize = 8192;
+				analyser.fftSize = fftSize;
 
 				navigator.mediaDevices
 					.getUserMedia({ audio: true, video: false })
@@ -117,6 +128,7 @@
 	};
 
 	const sampleCounts = [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768];
+	const colors = ['linear', 'logarithmic'];
 </script>
 
 <canvas id="fft" />
@@ -134,6 +146,12 @@
 	<select id="fft-samplesize" bind:value={fftSize} on:change={updateFFTSize}>
 		{#each sampleCounts as count}
 			<option value={count}>{count}</option>
+		{/each}
+	</select>
+	<label for="fft-coloring">Coloring Function</label>
+	<select id="fft-coloring" bind:value={coloring} on:change={updateFFTSize}>
+		{#each colors as color}
+			<option value={color}>{color[0].toUpperCase() + color.substring(1)}</option>
 		{/each}
 	</select>
 </div>
@@ -163,11 +181,12 @@
 
 		display: grid;
 		grid-template-columns: 1fr 1fr;
-		gap: 1rem;
+		gap: 0.5rem;
 		place-items: center;
 	}
 	label {
 		width: 100%;
+		font-size: 0.9rem;
 	}
 
 	button,
@@ -175,12 +194,12 @@
 		background: #111;
 		border: none;
 
-		width: 5rem;
+		width: 7rem;
 		height: 2rem;
 		color: inherit;
 	}
 
 	select {
-		padding: 0 1rem;
+		padding-left: 0.5rem;
 	}
 </style>
