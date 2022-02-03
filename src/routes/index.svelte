@@ -1,83 +1,37 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 
-	import * as THREE from 'three';
-	import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-	import Stats from 'three/examples/jsm/libs/stats.module';
+	let width = 512;
+	let height = 256;
 
 	onMount(() => {
-		const scene = new THREE.Scene();
+		const canvas = document.getElementById('fft') as HTMLCanvasElement;
+		width = window.innerWidth;
+		height = window.innerHeight;
+		canvas.width = width;
+		canvas.height = height;
 
-		const light = new THREE.AmbientLight();
-		scene.add(light);
-
-		const camera = new THREE.PerspectiveCamera(
-			75,
-			window.innerWidth / window.innerHeight,
-			0.1,
-			1000
-		);
-		camera.position.x = 7;
-		camera.position.y = 0.75;
-		camera.position.z = 10;
-
-		const renderer = new THREE.WebGLRenderer();
-		renderer.setSize(window.innerWidth, window.innerHeight);
-		document.body.appendChild(renderer.domElement);
-
-		new OrbitControls(camera, renderer.domElement);
-
-		const canvas = document.createElement('canvas') as HTMLCanvasElement;
-		canvas.width = 256;
-		canvas.height = 512;
+		document.body.appendChild(canvas);
 
 		const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
 
-		const texture = new THREE.Texture(canvas);
-		texture.minFilter = THREE.LinearFilter;
-		texture.magFilter = THREE.LinearFilter;
-
-		const plane = new THREE.Mesh(
-			new THREE.PlaneGeometry(20, 20, 256, 256),
-			new THREE.MeshPhongMaterial({
-				wireframe: true,
-				color: new THREE.Color(0x00ff00),
-				displacementMap: texture,
-				displacementScale: 10
-			})
-		);
-		plane.rotateX(-Math.PI / 2);
-		scene.add(plane);
+		ctx.fillStyle = `rgba(0,0,0)`;
+		ctx.fillRect(0, 0, width, height);
 
 		window.addEventListener('resize', onWindowResize, false);
 		function onWindowResize() {
-			camera.aspect = window.innerWidth / window.innerHeight;
-			camera.updateProjectionMatrix();
-			renderer.setSize(window.innerWidth, window.innerHeight);
-			render();
+			width = window.innerWidth;
+			height = window.innerHeight;
+			canvas.width = width;
+			canvas.height = height;
+			animate();
 		}
 
 		let context: AudioContext;
 		let analyser: AnalyserNode;
 		let mediaSource;
 		let imageData;
-
-		// function getUserMedia(
-		// 	dictionary: MediaStreamConstraints,
-		// 	callback: NavigatorUserMediaSuccessCallback
-		// ) {
-		// 	try {
-		// 		navigator.getUserMedia =
-		// 			navigator.getUserMedia ||
-		// 			(navigator as any).webkitGetUserMedia ||
-		// 			(navigator as any).mozGetUserMedia;
-		// 		navigator.getUserMedia(dictionary, callback, (e) => {
-		// 			console.dir(e);
-		// 		});
-		// 	} catch (e) {
-		// 		alert('getUserMedia threw exception :' + e);
-		// 	}
-		// }
+		let timeData: Uint8Array;
 
 		function connectAudioAPI() {
 			try {
@@ -101,39 +55,40 @@
 		}
 
 		function updateFFT() {
-			let timeData = new Uint8Array(analyser.frequencyBinCount);
+			timeData = new Uint8Array(analyser.frequencyBinCount);
 
 			analyser.getByteFrequencyData(timeData);
 
-			imageData = ctx.getImageData(0, 2, 256, 510);
-			ctx.putImageData(imageData, 0, 0, 0, 0, 256, 512);
+			imageData = ctx.getImageData(1, 0, width - 1, height);
+			ctx.putImageData(imageData, 0, 0);
 
-			for (let x = 0; x < 256; x++) {
-				//'rgb(' + timeData[x] + ', 0, 0) '
-				ctx.fillStyle = `rgb(${timeData[x]}, 0, 0)`;
+			const dataLength = 1024;
+			const dataStart = 0;
+			const dataEnd = 256;
+
+			for (let y = dataStart; y < dataEnd; y++) {
+				const data = timeData[y];
+
+				const hslStart = 255;
+
+				const l = data > 10 ? '50%' : '0%';
+
+				ctx.fillStyle = `hsl(${hslStart - data}, 100%, ${l})`;
+
+				const ratio = height / (dataEnd - dataStart);
+
+				const ypos = Math.floor(ratio * y);
+				const next_ypos = Math.floor(ratio * (y + 1)) - ypos;
+				const h = next_ypos - ypos;
 
 				// seems to affect wave height
-				ctx.fillRect(x, 510, 2, 2);
+				ctx.fillRect(width - 1, height - Math.floor(ratio * y), 1, h);
 			}
-
-			texture.needsUpdate = true;
 		}
-
-		const stats = Stats();
-		document.body.appendChild(stats.domElement);
 
 		function animate() {
-			requestAnimationFrame(animate);
-
 			updateFFT();
-
-			render();
-
-			stats.update();
-		}
-
-		function render() {
-			renderer.render(scene, camera);
+			requestAnimationFrame(animate);
 		}
 
 		window.onload = function () {
@@ -142,9 +97,18 @@
 	});
 </script>
 
+<canvas id="fft" />
+
 <style>
-	:global(body) {
+	:global(body, html, canvas) {
 		padding: 0;
 		margin: 0;
+
+		width: 100vw;
+		height: 100vh;
+
+		overflow: hidden;
+
+		background: black;
 	}
 </style>
