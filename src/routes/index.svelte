@@ -12,58 +12,161 @@
 	let imageData;
 	let timeData: Uint8Array;
 	let ctx: CanvasRenderingContext2D;
-	let fftSize = 2048;
-	let coloring = 'linear';
+	let fftSize = 4096;
+	let displayScale = 'logarithmic';
 
-	function updateFFT() {
+	let frequencyMarkers = [];
+	const frequencyMarkerDistance = 25;
+
+	const interpolate = (
+		value: number,
+		{ inputMin = 0, inputMax = 1, outputMin = 0, outputMax = 1 }
+	) => {
+		const adjustedValue = value - inputMin;
+		const adjustedMax = inputMax - inputMin;
+		const ratio = adjustedValue / adjustedMax;
+
+		const output = ratio * (outputMax - outputMin) + outputMin;
+
+		return output;
+	};
+
+	// 0 to 255 in
+	// 0 to 255 out
+	const sigmoid = (x: number) => {
+		const a = 9;
+		const b = -0.05;
+
+		const numerator = 255;
+
+		const power = a + b * x;
+		const denominator = 1 + Math.pow(Math.E, power);
+
+		return numerator / denominator;
+	};
+
+	function animate() {
+		if (!isActive) return;
+
+		// updateFFT();
+		getFrequencyBins();
+		requestAnimationFrame(animate);
+	}
+
+	const getLogarithmicPixelStart = (maxHz, pixelCount, pixelNumber: number) => {
+		return (pixelCount / maxHz) * Math.pow(pixelNumber, 2);
+	};
+
+	const getLogarithmicPixelSize = (maxHz, pixelCount, pixelNumber: number) => {
+		const curr = getLogarithmicPixelStart(maxHz, pixelCount, pixelNumber);
+		const next = getLogarithmicPixelStart(maxHz, pixelCount, pixelNumber + 1);
+		return next - curr;
+	};
+
+	const getFrequencyBins = () => {
 		if (!ctx) return;
 		timeData = new Uint8Array(analyser.frequencyBinCount);
-
 		analyser.getByteFrequencyData(timeData);
 
 		imageData = ctx.getImageData(1, 0, width - 1, height);
 		ctx.putImageData(imageData, 0, 0);
 
-		const dataLength = 1024;
-		const dataStart = 0;
-		const dataEnd = 256;
+		const maxHz = context.sampleRate / 2; // nyquist frequency
+		const binCount = analyser.frequencyBinCount;
+		const binSize = maxHz / analyser.frequencyBinCount;
 
-		for (let y = dataStart; y < dataEnd; y++) {
-			const data = timeData[y];
+		const pixelCount = height;
+		const visualizationPixels = Array(pixelCount).fill(0);
+		const binToPixelRatio = binCount / visualizationPixels.length;
 
-			const hslStart = 255;
-			const dataFloor = 25;
-			const hslfactor = hslStart / (hslStart - dataFloor);
+		frequencyMarkers = [];
 
-			const x = hslStart - data;
-			let color = x;
-			if (coloring === 'logarithmic') {
-				color = Math.pow(x, 2.3) / 1000;
+		const isLogarithmic = displayScale === 'logarithmic';
+
+		visualizationPixels.forEach((_, i) => {
+			const linearPixelSize = binToPixelRatio * binSize;
+			const logarithmicPixelSize = getLogarithmicPixelSize(maxHz, pixelCount, i);
+			const pixelSize = isLogarithmic ? logarithmicPixelSize : linearPixelSize;
+
+			const linearPixelStart = i * pixelSize;
+			const logarithmicPixelStart = getLogarithmicPixelStart(maxHz, pixelCount, i);
+			const pixelStartFrequency = isLogarithmic ? logarithmicPixelStart : linearPixelStart;
+
+			const pixelFrequencyMidpoint = pixelStartFrequency + pixelSize / 2;
+
+			let j = 0;
+			let previousDistance = 100000000;
+
+			while (previousDistance > Math.abs(pixelFrequencyMidpoint - j * binSize)) {
+				previousDistance = Math.abs(pixelFrequencyMidpoint - j * binSize);
+				j++;
 			}
 
-			if (color < 0) color = 0;
-			if (color > 255) color = 255;
-			const l = data > dataFloor && color < 255 ? '50%' : '0%';
+			// average the close bins to get the most accurate frequency value
+			const lowerBinDistance = Math.abs(pixelFrequencyMidpoint - (j - 1) * binSize);
+			const upperBinDistance = Math.abs(pixelFrequencyMidpoint - j * binSize);
+
+			const ratio = lowerBinDistance / upperBinDistance;
+
+			if (j + 1 <= timeData.length) {
+				const lowerBinValue = timeData[j - 1] / 1 + ratio;
+				const upperBinValue = timeData[j] / 1 - ratio;
+				const value = (lowerBinValue + upperBinValue) / 2;
+
+				visualizationPixels[i] = value;
+			} else {
+				visualizationPixels[i] = 0;
+			}
+		});
+
+		const [hzDict, _] = visualizationPixels.reduce(
+			([dict, i], pixel) => {
+				const linearPixelSize = binToPixelRatio * binSize;
+				const logarithmicPixelSize = getLogarithmicPixelSize(maxHz, pixelCount, i);
+				const pixelSize = isLogarithmic ? logarithmicPixelSize : linearPixelSize;
+
+				const linearPixelStart = i * pixelSize;
+				const logarithmicPixelStart = getLogarithmicPixelStart(maxHz, pixelCount, i);
+				const pixelStart = isLogarithmic ? logarithmicPixelStart : linearPixelStart;
+
+				dict[pixelStart] = pixel;
+				return [dict, i + 1];
+			},
+			[{}, 0] as [Record<string, number>, number]
+		);
+
+		const hzDataArray = Object.entries(hzDict as Record<string, number>);
+
+		for (let i = 0; i < pixelCount; i++) {
+			const [startHz, value] = hzDataArray[i];
+
+			const colorMax = 255;
+			const constainedValue = interpolate(value, {
+				inputMin: 0,
+				inputMax: 255,
+				outputMin: 0,
+				outputMax: 1
+			});
+
+			const colorValue = interpolate(constainedValue, {
+				inputMin: 0,
+				inputMax: 1,
+				outputMin: 0,
+				outputMax: 255
+			});
+
+			if (i % frequencyMarkerDistance === 0) frequencyMarkers.push(Math.round(parseFloat(startHz)));
+
+			const adjustedColorValue = sigmoid(colorValue);
+			let color = colorMax - adjustedColorValue;
+
+			const l = `${Math.round(10 * Math.log(adjustedColorValue))}%`; // max l = ~55% with x=255
 
 			ctx.fillStyle = `hsl(${color}, 100%, ${l})`;
 
-			const ratio = height / (dataEnd - dataStart);
-
-			const ypos = Math.floor(ratio * y);
-			const next_ypos = Math.floor(ratio * (y + 1)) - ypos;
-			const h = next_ypos - ypos;
-
-			// seems to affect wave height
-			ctx.fillRect(width - 1, height - Math.floor(ratio * y), 1, h);
+			ctx.fillRect(width - 1, height - i, 1, 1);
 		}
-	}
-
-	function animate() {
-		if (!isActive) return;
-
-		updateFFT();
-		requestAnimationFrame(animate);
-	}
+	};
 
 	onMount(() => {
 		const canvas = document.getElementById('fft') as HTMLCanvasElement;
@@ -128,7 +231,7 @@
 	};
 
 	const sampleCounts = [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768];
-	const colors = ['linear', 'logarithmic'];
+	const displayScales = ['linear', 'logarithmic'];
 </script>
 
 <canvas id="fft" />
@@ -148,12 +251,18 @@
 			<option value={count}>{count}</option>
 		{/each}
 	</select>
-	<label for="fft-coloring">Coloring Function</label>
-	<select id="fft-coloring" bind:value={coloring} on:change={updateFFTSize}>
-		{#each colors as color}
-			<option value={color}>{color[0].toUpperCase() + color.substring(1)}</option>
+	<label for="fft-displayscale">Display Scale</label>
+	<select id="fft-displayscale" bind:value={displayScale}>
+		{#each displayScales as scale}
+			<option value={scale}>{scale.substring(0, 1).toUpperCase() + scale.substring(1)}</option>
 		{/each}
 	</select>
+</div>
+<!-- span content size = 12.5px -->
+<div id="markers" style={`gap: ${frequencyMarkerDistance - 12.5}px;`}>
+	{#each frequencyMarkers as marker}
+		<span>{marker}hz</span>
+	{/each}
 </div>
 
 <style>
@@ -171,7 +280,7 @@
 			'Open Sans', 'Helvetica Neue', sans-serif;
 	}
 
-	div {
+	.controls {
 		position: absolute;
 		top: 0;
 		left: 0;
@@ -201,5 +310,18 @@
 
 	select {
 		padding-left: 0.5rem;
+	}
+
+	#markers {
+		position: absolute;
+		right: 0;
+		bottom: 0;
+		display: flex;
+		flex-direction: column-reverse;
+		background: transparent;
+		padding: 0;
+		color: whitesmoke;
+		text-align: right;
+		font-size: 10px;
 	}
 </style>
