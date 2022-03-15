@@ -258,8 +258,8 @@
 		{/each}
 	</select>
 </div>
-<!-- span content size = 12.5px -->
-<div id="markers" style={`gap: ${frequencyMarkerDistance - 12.5}px;`}>
+<!-- span content size = 12px -->
+<div id="markers" style={`gap: ${frequencyMarkerDistance - 12}px;`}>
 	{#each frequencyMarkers as marker}
 		<span>{marker}hz</span>
 	{/each}
@@ -315,7 +315,7 @@
 	#markers {
 		position: absolute;
 		right: 0;
-		bottom: 0;
+		bottom: -6px; /* half of label size for more accurate labels */
 		display: flex;
 		flex-direction: column-reverse;
 		background: transparent;
@@ -323,5 +323,10 @@
 		color: whitesmoke;
 		text-align: right;
 		font-size: 10px;
+		font-family: monospace;
+	}
+
+	#markers span {
+		height: 12px;
 	}
 </style>
